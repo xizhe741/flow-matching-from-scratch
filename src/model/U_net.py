@@ -80,7 +80,10 @@ class U_Net(nn.Module):
         # flow matching 调用时传入的 t 形状可能是 (B,) 或 (B,1)/(B,1,1,1), 这里统一压成 (B,)
         if t.dim() > 1:
             t = t.view(-1)
-        t_emb = self.time_mlp(sinusoidal_embedding(self.embedded_dim, t))
+        # t 在 [0, 1] 区间, sinusoidal_embedding 高频项几乎全为 0,
+        # 网络无法分辨不同 t. 缩放到 [0, 1000] 让全频谱都有信号.
+        t_scaled = t * 1000.0
+        t_emb = self.time_mlp(sinusoidal_embedding(self.embedded_dim, t_scaled))
 
         x = self.entry(x)
         skips = []
