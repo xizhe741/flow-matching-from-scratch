@@ -38,7 +38,7 @@ from torchvision.utils import make_grid, save_image
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.flow.flow_matching import FlowMatching
-from src.flow.interpolant import linear_coeffs, noise_magnify
+from src.flow.interpolant import linear_coeffs
 from src.model.U_net import U_Net
 
 
@@ -73,7 +73,7 @@ def main():
     net_v.eval()
     net_s.eval()
 
-    flow = FlowMatching(interp_func=linear_coeffs, sigma_func=noise_magnify)
+    flow = FlowMatching(interp_func=linear_coeffs)
 
     # ---- 反向采样 (核心): SDE 见 FlowMatching.sde_sample, ODE 见 ode_sample ----
     if args.ode:
