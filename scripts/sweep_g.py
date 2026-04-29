@@ -4,21 +4,21 @@
 =============================================================================
 布局: 6 行 x N 列, 同一份 x0 喂给所有预设, 保证横向可比.
 
-行         标签            sampler        g(t)
-1          ODE             ode_sample     -
-2          g=0.5sigma      sde_sample     ScaledSigma(0.5)
-3          g=1.0sigma      sde_sample     ScaledSigma(1.0)  (默认)
-4          g=2.0sigma      sde_sample     ScaledSigma(2.0)
-5          g=3.0sigma      sde_sample     ScaledSigma(3.0)
-6          g^2=2*sigma*sigma_dot, t<=0.5  sde_sample     SigmaSigmaDot()
+行         标签                            sampler        g(t)
+1          ODE                             ode_sample     -
+2          SDE g=0.5 sigma                 sde_sample     ScaledSigma(0.5)
+3          SDE g=1.0 sigma                 sde_sample     ScaledSigma(1.0)  (默认)
+4          SDE g=2.0 sigma                 sde_sample     ScaledSigma(2.0)
+5          SDE g=3.0 sigma                 sde_sample     ScaledSigma(3.0)
+6          SDE VP(beta=0.1->20)            sde_sample     VPSchedule(0.1, 20)
 
 注意:
-- VP 行 (SigmaSigmaDot) 只在 t<=0.5 合法, 故时间网格限制到 [eps_t, 0.5],
-  输出是中间态而非终态. 这一行展示的是论文允许的半程采样行为, 不直接对应
-  "完整生成图".
+- VP 行使用 Score-SDE (Song et al. 2021) 形式 g(t) = sqrt(beta(t)),
+  beta(t) = beta_min + t*(beta_max - beta_min). 与训练时 sigma(t) 解耦,
+  端点不归零, 完全依赖 sampler 内部 t_grid 的 [eps_t, 1-eps_t] 截断.
 - c 越大端点附近修正越剧烈, 大 c 建议同时调大 --steps.
-- 所有行共享同一份 x0, 不同 sampler 内部仍会消耗不同的随机数 (SDE 行有
-  randn_like), 故 SDE 行之间的差异既来自 g 也来自布朗增量.
+- 所有行共享同一份 x0; SDE 行内部仍各自消耗布朗增量随机数,
+  故 SDE 行之间的差异既来自 g 也来自 dW 实现.
 
 Usage:
     python scripts/sweep_g.py --ckpt checkpoints/latest.pt --n 24 --out sweep_g.png
@@ -35,7 +35,7 @@ from torchvision.utils import make_grid, save_image
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from src.flow.diffusion_coef import ScaledSigma, SigmaSigmaDot
+from src.flow.diffusion_coef import ScaledSigma, VPSchedule
 from src.flow.flow_matching import FlowMatching
 from src.flow.interpolant import linear_coeffs
 from src.model.U_net import U_Net
@@ -45,18 +45,16 @@ def build_presets():
     """返回 [(label, kind, g_fn_or_none)].
 
     kind:
-        "ode"          -- 全程 ODE
-        "sde"          -- 全程 SDE, 用给定 g_fn
-        "vp_then_ode"  -- 前半段 (t<=0.5) SDE 用 SigmaSigmaDot, 后半段 (t>0.5) ODE
-                          (SigmaSigmaDot 在 t>0.5 无定义, 故后半段切 ODE 走完整路径)
+        "ode"  -- 全程 ODE
+        "sde"  -- 全程 SDE, 用给定 g_fn
     """
     return [
-        ("ODE",                 "ode", None),
-        ("SDE g=0.5 sigma",     "sde", ScaledSigma(0.5)),
-        ("SDE g=1.0 sigma",     "sde", ScaledSigma(1.0)),
-        ("SDE g=2.0 sigma",     "sde", ScaledSigma(2.0)),
-        ("SDE g=3.0 sigma",     "sde", ScaledSigma(3.0)),
-        ("VP -> ODE (split at t=0.5)", "vp_then_ode", None),
+        ("ODE",                          "ode", None),
+        ("SDE g=0.5 sigma",              "sde", ScaledSigma(0.5)),
+        ("SDE g=1.0 sigma",              "sde", ScaledSigma(1.0)),
+        ("SDE g=2.0 sigma",              "sde", ScaledSigma(2.0)),
+        ("SDE g=3.0 sigma",              "sde", ScaledSigma(3.0)),
+        ("SDE VP (beta 0.1 -> 20)",      "sde", VPSchedule(0.1, 20.0)),
     ]
 
 
@@ -69,19 +67,6 @@ def run_preset(flow, net_v, net_s, x0, steps, kind, g_fn):
     if kind == "sde":
         x, _ = flow.sde_sample(net_v, net_s, x0=x0, steps=steps, g_fn=g_fn)
         return x
-
-    if kind == "vp_then_ode":
-        device = x0.device
-        half = max(1, steps // 2)
-        # 前半段: [eps_t, 0.5], SDE + SigmaSigmaDot
-        t_grid_a = torch.linspace(flow.eps_t, 0.5, half + 1, device=device)
-        x_mid, _ = flow.sde_sample(
-            net_v, net_s, x0=x0, t_grid=t_grid_a, g_fn=SigmaSigmaDot()
-        )
-        # 后半段: [0.5, 1 - eps_t], ODE
-        t_grid_b = torch.linspace(0.5, 1.0 - flow.eps_t, steps - half + 1, device=device)
-        x_end, _ = flow.ode_sample(net_v, net_s, x0=x_mid, t_grid=t_grid_b)
-        return x_end
 
     raise ValueError(f"unknown preset kind: {kind}")
 

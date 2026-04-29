@@ -134,7 +134,7 @@ class FlowMatching:
               diffusion = g(t) * sqrt(dt) * randn,  最后一步置零
 
         参数:
-            g_fn  -- diffusion_coef.py 里的 ScaledSigma / SigmaSigmaDot 等;
+            g_fn  -- diffusion_coef.py 里的 ScaledSigma / VPSchedule 等;
                      默认 ScaledSigma(c=1.0), 即 g(t) = sigma(t)
             其余参数同 ode_sample
         """
