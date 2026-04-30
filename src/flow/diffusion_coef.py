@@ -43,12 +43,16 @@ class VPSchedule:
     """Variance-Preserving 反向 SDE 噪声调度.
 
     Song et al. ICLR 2021, "Score-Based Generative Modeling through SDEs":
-        前向 VP-SDE:  dx = -0.5 beta(t) x dt + sqrt(beta(t)) dW
-    本项目复用其 g(t) = sqrt(beta(t)) 作为反向 SDE 的扩散系数,
-    beta(t) = beta_min + t * (beta_max - beta_min).
+        前向 VP-SDE:  ds = -0.5 beta(s) x ds + sqrt(beta(s)) dW,   s in [0, 1] (noise-end at s=1)
 
-    与 ScaledSigma 不同, VP 调度不依赖训练时的 sigma(t); 端点附近 g(t) 不归零,
-    需配合采样器的 t_grid 端点截断使用.
+    论文采样时反演时间方向 (从 noise 到 data): 反向时间 s 从 1 -> 0, beta 从 beta_max -> beta_min.
+
+    本项目采样时间 t 沿 0 -> 1 (noise -> data) 方向, 与论文反向时间同向, 故映射关系为
+        s = 1 - t  =>  beta(t) = beta_max + t * (beta_min - beta_max)
+    即 beta(t=0) = beta_max (起始处大噪声), beta(t=1) = beta_min (末段噪声衰减),
+    使 g(t) = sqrt(beta(t)) 在图像成型阶段下降, 与论文 VP 反向采样行为一致.
+
+    构造参数仍按 (beta_min, beta_max) 标准命名; 内部映射保证 t=1 处取 beta_min.
     """
 
     def __init__(self, beta_min: float = 0.1, beta_max: float = 20.0):
@@ -66,5 +70,6 @@ class VPSchedule:
         self.beta_max = beta_max
 
     def __call__(self, t: torch.Tensor) -> torch.Tensor:
-        beta_t = self.beta_min + t * (self.beta_max - self.beta_min)
+        # t=0 (起始, 纯噪声): beta = beta_max; t=1 (终点, 数据): beta = beta_min
+        beta_t = self.beta_max + t * (self.beta_min - self.beta_max)
         return torch.sqrt(beta_t)
