@@ -11,7 +11,7 @@ CIFAR-10 上扫描 6 种扩散系数 g(t) 预设的采样对比 (`scripts/sweep_
 
 ![sweep_g](assets/sweep_g.png)
 
-从上到下分别是 ODE、SDE g = 0.5σ / 1.0σ / 2.0σ / 3.0σ、以及 VP→ODE (split at t=0.5). DDPM 的对照采样图见 [`../diffusion_model_from_scratch/assets/samples_model.png`](../diffusion_model_from_scratch/assets/samples_model.png).
+从上到下分别是 ODE、SDE g = 0.5σ / 1.0σ / 2.0σ / 3.0σ、以及 VP→ODE (split at t=0.5). DDPM 的实现和对照参见 https://github.com/xizhe741/diffusion-model-from-scratch.
 
 ---
 
